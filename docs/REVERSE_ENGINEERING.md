@@ -79,4 +79,36 @@ Depois crie `xeno_control/protocols/<dispositivo>.py` e aponte `protocol=` em
 
 ## Comandos mapeados
 
-_Nenhum ainda. Contribuições são bem-vindas!_
+### Headset (`413c:a529`) - bateria ✅
+
+O dongle usa o protocolo **Airoha RACE** dentro de dois reports da interface `0xFF13`.
+Formato conforme os projetos Headroom e HaloBattery (outros headsets Airoha); confirmado
+neste headset no Linux. Implementado em `xeno_control/protocols/airoha_race.py`.
+
+```
+pedido  : output report 6, 62 bytes
+          06 07 80 05 5a 03 00 d6 0c 00 00 ... (zeros)
+          |  |  |  '-- quadro RACE: 05 | tipo 5a (pedido) | len u16le = 3 | opcode u16le 0x0cd6 | 00
+          |  |  '-- destino: 80 = headset, 00 = o próprio dongle (que não tem bateria)
+          |  '-- tamanho do quadro RACE (1 byte)
+          '-- report id
+resposta: input report 7 lido com GET_REPORT (HIDIOCGINPUT), guarda o último estado
+          07 <tamanho> 80 05 5b 03 00 d6 0c 00 05 5d 05 00 d6 0c 00 00 3a
+                         '-- confirmação (5b)   '-- indicação (5d): [status, papel, %] -> 0x3a = 58%
+```
+
+O report 7 também traz notificações periódicas (opcode `0x2cb1`, tipo `5d`). **Nunca** envie
+opcodes nas faixas `0x0400-0x04FF` e `0x1C00-0x1CFF`: apagam flash / atualizam firmware.
+
+### Mouse (`413c:2120`) - bateria ❌ (tentativas)
+
+- O receptor do *teclado* Alienware Pro (`413c:211d`) responde à bateria com o feature
+  report 0 `0e a1 00...` (projeto HaloBattery). No receptor do mouse, o mesmo pedido como
+  feature report é recusado (`EPIPE`) e como output report não tem resposta.
+- Parado, o mouse não envia nada nas interfaces `0xFF00`/`0xFF20`. Precisa de captura no Windows.
+- Com cabo USB-C o mouse aparece como `413c:211f` ("Alienware Pro Gaming Mouse"), com as
+  mesmas interfaces. Ali o feature report `0e a1` é **aceito**, mas não há resposta (nem input
+  em `0xFF00`/`0xFF20`, nem GET_FEATURE). O protocolo do mouse é outro.
+- Ao ligar, o receptor mandou sozinho em `0xFF00`: `c0 09 01 00 dd 00...`.
+- O report de movimento tem 5 bytes do fabricante; normalmente `03 00 00 00 00`, uma vez
+  `03 44 00 00 00` num clique. Significado desconhecido.

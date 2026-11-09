@@ -15,15 +15,36 @@ existe para Windows.
 | Perfis de energia/térmicos (Silencioso, Balanceado, Desempenho, **G-Mode**...) | ✅ | `platform_profile` do driver `alienware-wmi` |
 | Temperaturas e RPM das ventoinhas | ✅ | `hwmon` (`alienware_wmi`, `coretemp`, `nvme`...) |
 | Boost manual das ventoinhas | ✅ kernel 6.15+ | `fanN_boost` no perfil `custom` |
-| Modo de carga da bateria (Standard, Adaptive, Express, Custom...) e limites de carga | ✅ kernels recentes | `power_supply` do `dell-laptop` |
+| Modo de carga da bateria (Standard, Adaptive, Fast/Express, Custom, Long_Life) e limites de carga | ✅ | `power_supply` do `dell-laptop`, ou tokens do `dell-smbios` quando o `dell-laptop` não carrega (Alienware) |
 | Restaurar o perfil no boot | ✅ | `xeno-control-restore.service` |
-| Detectar mouse e headset Alienware | ✅ | `hidraw` |
-| Mouse: DPI, RGB, bateria, polling | 🔬 em mapeamento | veja [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) |
-| Headset: bateria, EQ, sidetone | 🔬 em mapeamento | idem |
+| Detectar mouse (sem fio e com cabo) e headset Alienware | ✅ | `hidraw` |
+| Headset: bateria | ✅ | protocolo Airoha RACE pelo dongle |
+| Headset: EQ, sidetone | 🔬 em mapeamento | veja [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) |
+| Mouse: DPI, RGB, bateria, polling | 🔬 em mapeamento | idem |
 | RGB do teclado | 📋 planejado | |
 
-Testado como alvo: **Alienware 16 Aurora (AC16250)**, **Alienware Pro Wireless Gaming Mouse**
-(`413c:2120`) e **Alienware Pro Wireless Gaming Headset** (`413c:a529`).
+## Hardware testado
+
+> ⚠️ **Até agora o Xeno Control só foi testado em um único notebook e nos periféricos abaixo.**
+> Outros modelos Alienware/Dell podem funcionar (as interfaces do kernel são as mesmas), mas
+> ainda não foram verificados. Se você testar em outro modelo, abra uma issue contando o resultado.
+
+**Notebook:** Alienware 16 Aurora **AC16250** (SKU 0D35, BIOS 1.16.0), CachyOS, kernel 7.3.3
+
+| Recurso | Resultado |
+|---|---|
+| Perfis de energia, incluindo G-Mode | ✅ funciona |
+| Temperaturas e ventoinhas | ✅ funciona |
+| Modo de carga e limites da bateria | ✅ funciona via `dell-smbios` (o `dell-laptop` não carrega neste modelo) |
+| GUI e serviço de boot | ✅ funciona |
+
+**Periféricos:**
+
+| Dispositivo | ID USB | Resultado |
+|---|---|---|
+| Alienware Pro Wireless Gaming Headset (dongle) | `413c:a529` | ✅ áudio nativo · ✅ bateria · 🔬 EQ/sidetone |
+| Alienware Pro Wireless Gaming Mouse (receptor sem fio) | `413c:2120` | ✅ mouse nativo · ❌ bateria/DPI/RGB ainda não |
+| Alienware Pro Wireless Gaming Mouse (com cabo USB-C) | `413c:211f` | ✅ mouse nativo · ❌ bateria/DPI/RGB ainda não |
 
 ## Instalação
 
@@ -73,7 +94,11 @@ echo "options alienware_wmi force_platform_profile=1 force_gmode=1" | sudo tee /
 
 e abra uma issue aqui com o modelo, para avisarmos o pessoal do kernel.
 
-**Bateria sem `charge_types`.** Precisa de kernel recente com o módulo `dell-laptop`.
+**Bateria sem `charge_types`.** O `dell-laptop` só carrega em máquinas com fabricante
+"Dell Inc." no DMI; em Alienware ele falha com `No such device`. Nesse caso o Xeno Control
+usa a interface `/dev/wmi/dell-smbios` (módulo `dell-smbios`, carregado por padrão) e
+`xeno battery` mostra "(via dell-smbios)". Ler e mudar o modo exige root (`sudo xeno battery`);
+a BIOS aceita limites de 50–95% (início) e 55–100% (fim), com pelo menos 5 pontos de diferença.
 
 ## Desenvolvimento
 

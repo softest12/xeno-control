@@ -92,9 +92,10 @@ class PowerTab(QWidget):
                 b = QPushButton("Aplicar modo")
                 b.clicked.connect(lambda: self._cli("battery", "mode", self.mode.currentText()))
                 bl.addWidget(b, 1, 2)
-            if bat.end_threshold is not None:
-                self.start = QSpinBox(); self.start.setRange(0, 95); self.start.setValue(bat.start_threshold or 50)
-                self.end = QSpinBox(); self.end.setRange(5, 100); self.end.setValue(bat.end_threshold)
+            if bat.end_threshold is not None or bat.backend == "smbios":
+                lo = 50 if bat.backend == "smbios" else 0  # limites aceitos pela BIOS Dell
+                self.start = QSpinBox(); self.start.setRange(lo, 95); self.start.setValue(bat.start_threshold or 50)
+                self.end = QSpinBox(); self.end.setRange(lo + 5, 100); self.end.setValue(bat.end_threshold or 80)
                 bl.addWidget(QLabel("Carregar de / até (%)"), 2, 0)
                 bl.addWidget(self.start, 2, 1)
                 bl.addWidget(self.end, 2, 2)
@@ -125,7 +126,8 @@ class PowerTab(QWidget):
             bats = laptop.batteries()
             if bats:
                 b = bats[0]
-                self.bat_label.setText(f"<b>{b.capacity}%</b> · {b.status} · modo {b.charge_type or '-'}")
+                note = f"<br><span style='color:#8892a6'>{b.note}</span>" if b.note else ""
+                self.bat_label.setText(f"<b>{b.capacity}%</b> · {b.status} · modo {b.charge_type or '-'}{note}")
                 if hasattr(self, "mode") and b.charge_type in b.charge_types:
                     self.mode.setCurrentText(b.charge_type)
 
@@ -198,11 +200,16 @@ class PeripheralsTab(QWidget):
         for p in devices.peripherals():
             status = p.info.status if p.info else "dispositivo desconhecido"
             nodes = ", ".join(i.node for i in p.interfaces)
-            parts.append(f"<h3>{p.title}</h3><p style='color:#8892a6'>{p.vid:04x}:{p.pid:04x} · {nodes}"
+            bat = ""
+            if p.supports_battery:
+                r = p.battery()
+                bat = (f"<p style='font-size:20px'>🔋 <b>{r.level}%</b></p>" if r.level is not None
+                       else f"<p>🔋 bateria: {r.error}</p>")
+            parts.append(f"<h3>{p.title}</h3>{bat}<p style='color:#8892a6'>{p.vid:04x}:{p.pid:04x} · {nodes}"
                          f"<br>{status}</p>")
         if not parts:
             parts.append("<p>Nenhum periférico Alienware/Dell encontrado.</p>")
-        parts.append("<p style='color:#8892a6'>DPI, RGB, bateria, EQ e sidetone dependem do mapeamento do "
+        parts.append("<p style='color:#8892a6'>DPI, RGB, bateria do mouse, EQ e sidetone dependem do mapeamento do "
                      "protocolo USB. Veja docs/REVERSE_ENGINEERING.md e use <code>xeno hid monitor</code>.</p>")
         self.text.setHtml("".join(parts))
 

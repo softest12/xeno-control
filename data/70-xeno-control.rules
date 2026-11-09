@@ -6,5 +6,7 @@
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="413c", ATTRS{idProduct}=="a529", TAG+="uaccess"
 # Alienware wireless mouse receiver
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="413c", ATTRS{idProduct}=="2120", TAG+="uaccess"
+# Alienware Pro Wireless Gaming Mouse connected by USB-C cable (wired mode)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="413c", ATTRS{idProduct}=="211f", TAG+="uaccess"
 # Legacy Alienware USB devices (AlienFX keyboards/lighting)
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", TAG+="uaccess"

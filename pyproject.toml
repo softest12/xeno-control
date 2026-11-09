@@ -27,7 +27,7 @@ xeno = "xeno_control.cli:main"
 xeno-control = "xeno_control.gui:main"
 
 [tool.setuptools]
-packages = ["xeno_control"]
+packages = ["xeno_control", "xeno_control.protocols"]
 
 [tool.setuptools.dynamic]
 version = { attr = "xeno_control.__version__" }

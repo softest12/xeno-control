@@ -8,7 +8,9 @@ Everything here uses mainline kernel interfaces, no reverse-engineered WMI calls
 * ``hwmon`` (fans and temperatures; the Alienware driver registers as
   ``alienware_wmi`` on kernel 6.15+).
 * ``power_supply`` (battery charge mode / thresholds, provided by
-  ``dell-laptop`` on recent kernels).
+  ``dell-laptop`` on recent kernels). ``dell-laptop`` refuses to load on
+  machines whose DMI vendor is "Alienware", so there we fall back to the
+  ``dell-smbios`` WMI interface (see :mod:`xeno_control.smbios`).
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import sysfs
+from . import smbios, sysfs
 
 PROFILE_LABELS = {
     "low-power": "Economia",
@@ -248,6 +250,8 @@ class Battery:
     charge_type: str | None
     start_threshold: int | None
     end_threshold: int | None
+    backend: str = "sysfs"          # "sysfs" (dell-laptop) | "smbios" | "none"
+    note: str | None = None
 
 
 def _parse_bracket_list(text: str | None) -> tuple[list[str], str | None]:
@@ -268,7 +272,7 @@ def batteries() -> list[Battery]:
     base = sysfs.path("/sys/class/power_supply")
     if not base.is_dir():
         return []
-    out = []
+    out: list[Battery] = []
     for ps in sorted(base.iterdir()):
         if sysfs.read(ps / "type") != "Battery":
             continue
@@ -283,7 +287,27 @@ def batteries() -> list[Battery]:
             start_threshold=sysfs.read_int(ps / "charge_control_start_threshold"),
             end_threshold=sysfs.read_int(ps / "charge_control_end_threshold"),
         ))
+        bat = out[-1]
+        has_sysfs = bool(types) or bat.charge_type is not None or bat.end_threshold is not None
+        if has_sysfs:
+            continue
+        if len(out) == 1 and smbios.available():
+            _fill_from_smbios(bat)  # dell-smbios only controls the primary battery
+        else:
+            bat.backend = "none"
     return out
+
+
+def _fill_from_smbios(bat: Battery) -> None:
+    bat.backend = "smbios"
+    bat.charge_types = smbios.supported_modes()
+    try:
+        bat.charge_type = smbios.charge_mode()
+        bat.start_threshold, bat.end_threshold = smbios.thresholds()
+    except PermissionError:
+        bat.note = "modo e limites via dell-smbios: rode com sudo para ler"
+    except (OSError, smbios.SmbiosError) as exc:
+        bat.note = f"dell-smbios: {exc}"
 
 
 def _battery(name: str | None) -> Battery:
@@ -300,6 +324,9 @@ def _battery(name: str | None) -> Battery:
 
 def set_charge_type(charge_type: str, battery: str | None = None) -> None:
     bat = _battery(battery)
+    if bat.backend == "smbios":
+        smbios.set_charge_mode(charge_type)
+        return
     if bat.charge_types and charge_type not in bat.charge_types:
         raise ValueError(f"Modo inválido. Opções: {', '.join(bat.charge_types)}")
     attr = bat.path / ("charge_types" if bat.charge_types else "charge_type")
@@ -312,6 +339,12 @@ def set_charge_thresholds(start: int, end: int, battery: str | None = None) -> N
     if not (0 <= start < end <= 100):
         raise ValueError("Use 0 <= início < fim <= 100")
     bat = _battery(battery)
+    if bat.backend == "smbios":
+        smbios.set_thresholds(start, end)
+        # Thresholds only matter in "Custom" mode on Dell machines.
+        if smbios.charge_mode() != "Custom":
+            smbios.set_charge_mode("Custom")
+        return
     start_p = bat.path / "charge_control_start_threshold"
     end_p = bat.path / "charge_control_end_threshold"
     if not end_p.exists():

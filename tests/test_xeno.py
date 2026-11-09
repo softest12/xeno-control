@@ -128,3 +128,146 @@ def test_cli_status(fake, capsys):
     assert cli.main(["status"]) == 0
     out = capsys.readouterr().out
     assert "AC16250" in out and "balanced" in out and "Headset" in out
+
+
+# --------------------------------------------------------------------------
+# dell-smbios fallback (Alienware: dell-laptop refuses to load)
+# --------------------------------------------------------------------------
+
+from xeno_control import smbios  # noqa: E402
+
+TOKENS = {0x0341: (0x10, 1), 0x0342: (0x10, 2), 0x0343: (0x10, 3), 0x0346: (0x10, 6),
+          0x0347: (0x10, 7), 0x0349: (0x20, 0), 0x034A: (0x21, 0)}
+
+
+class FakeFirmware:
+    """Emulates the BIOS side of token read/write calls."""
+
+    def __init__(self):
+        self.mem = {0x10: 2, 0x20: 50, 0x21: 100}  # Adaptive, 50-100%
+        self.calls = []
+
+    def __call__(self, cls, sel, inputs):
+        loc, val = inputs[0], inputs[1]
+        self.calls.append((cls, sel, loc, val))
+        if cls == smbios.CLASS_TOKEN_READ:
+            return (0, self.mem[loc], 0, 0)
+        if loc in (0x20, 0x21):
+            start = val if loc == 0x20 else self.mem[0x20]
+            end = val if loc == 0x21 else self.mem[0x21]
+            if end - start < 5:
+                return (-1, 0, 0, 0)
+        self.mem[loc] = val
+        return (0, 0, 0, 0)
+
+
+@pytest.fixture
+def alienware_bat(fake, monkeypatch):
+    base = fake / "sys/class/power_supply/BAT0"
+    for f in ("charge_types", "charge_control_start_threshold", "charge_control_end_threshold"):
+        (base / f).unlink()
+    for tid, (loc, val) in TOKENS.items():
+        _w(fake, f"{smbios.TOKENS_DIR}/{tid:04x}_location", f"{loc:08x}\n")
+        _w(fake, f"{smbios.TOKENS_DIR}/{tid:04x}_value", f"{val:08x}\n")
+    _w(fake, smbios.DEVICE, "")
+    fw = FakeFirmware()
+    monkeypatch.setattr(smbios, "call", fw)
+    return fw
+
+
+def test_ioctl_number():
+    # _IOWR('W', 0, struct dell_wmi_smbios_buffer) from <linux/wmi.h>
+    assert smbios.DELL_WMI_SMBIOS_CMD == 0xC0345700
+
+
+def test_smbios_battery_read(alienware_bat):
+    (bat,) = laptop.batteries()
+    assert bat.backend == "smbios"
+    assert bat.charge_types == ["Standard", "Adaptive", "Fast", "Custom", "Long_Life"]
+    assert bat.charge_type == "Adaptive"
+    assert (bat.start_threshold, bat.end_threshold) == (50, 100)
+
+
+def test_smbios_set_mode(alienware_bat):
+    laptop.set_charge_type("express")
+    assert laptop.batteries()[0].charge_type == "Fast"
+    with pytest.raises(ValueError):
+        laptop.set_charge_type("Turbo")
+
+
+def test_smbios_thresholds(alienware_bat):
+    with pytest.raises(ValueError):
+        laptop.set_charge_thresholds(40, 80)
+    laptop.set_charge_thresholds(60, 80)
+    bat = laptop.batteries()[0]
+    assert (bat.start_threshold, bat.end_threshold, bat.charge_type) == (60, 80, "Custom")
+    # Moving the window up past the old end needs end written first.
+    laptop.set_charge_thresholds(85, 95)
+    assert alienware_bat.mem[0x20] == 85 and alienware_bat.mem[0x21] == 95
+
+
+def test_smbios_not_root(alienware_bat, monkeypatch, capsys):
+    def denied(*_a):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(smbios, "call", denied)
+    (bat,) = laptop.batteries()
+    assert bat.charge_type is None and "sudo" in bat.note
+    assert cli.main(["battery"]) == 0
+    assert "via dell-smbios" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# Headset battery: Airoha RACE over HID
+# --------------------------------------------------------------------------
+
+from xeno_control.protocols import airoha_race  # noqa: E402
+
+
+def test_race_request_bytes():
+    req = airoha_race.build_request(airoha_race.OP_BATTERY, b"\x00")
+    assert len(req) == 62
+    assert req[:10] == bytes.fromhex("06 07 80 05 5a 03 00 d6 0c 00")
+    assert set(req[10:]) == {0}
+
+
+def test_race_parse_real_capture():
+    # Report captured from the AC16250's headset dongle (battery 58%).
+    report = bytes.fromhex("07 10 80 05 5b 03 00 d6 0c 00 05 5d 05 00 d6 0c 00 00 3a").ljust(62, b"\0")
+    frames = airoha_race.parse_frames(airoha_race.report_payload(report))
+    assert [(f.type, f.opcode) for f in frames] == [(0x5B, 0x0CD6), (0x5D, 0x0CD6)]
+    assert frames[1].payload[2] == 58
+
+
+class FakeDongle:
+    def __init__(self, node, stale=b"", reply_after=2, level=58):
+        self.reads, self.sent = 0, []
+        self.stale = bytes([7, len(stale), 0]) + stale
+        self.level, self.reply_after = level, reply_after
+
+    def write(self, data):
+        self.sent.append(data)
+
+    def get_input(self):
+        self.reads += 1
+        if self.sent and self.reads > self.reply_after:
+            race = bytes.fromhex("05 5d 05 00 d6 0c 00 00") + bytes([self.level])
+            return (bytes([7, len(race), 0x80]) + race).ljust(62, b"\0")
+        return self.stale.ljust(62, b"\0")
+
+    def close(self):
+        pass
+
+
+def test_race_read_battery_skips_stale_snapshot():
+    # A stale indication from an earlier poll must not be taken as the answer.
+    old = bytes.fromhex("05 5d 05 00 d6 0c 00 00 63")  # 99%
+    dongle = FakeDongle("x", stale=old, level=58)
+    level = airoha_race.read_battery("x", transport=lambda n: dongle, sleep=lambda s: None)
+    assert level == 58
+    assert len(dongle.sent) == 1 and dongle.sent[0][7:9] == b"\xd6\x0c"
+
+
+def test_race_read_battery_no_answer():
+    dongle = FakeDongle("x", reply_after=10**9)
+    assert airoha_race.read_battery("x", timeout=0.05, transport=lambda n: dongle,
+                                    sleep=lambda s: None) is None

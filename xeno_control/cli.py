@@ -44,7 +44,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
         print(f"Bateria : {b.name} {b.capacity}% ({b.status}{mode}{lim})")
 
     for p in devices.peripherals():
-        print(f"Periférico: {p.title} [{p.vid:04x}:{p.pid:04x}]")
+        bat = f" - bateria {p.battery()}" if p.supports_battery else ""
+        print(f"Periférico: {p.title} [{p.vid:04x}:{p.pid:04x}]{bat}")
     return 0
 
 
@@ -125,14 +126,19 @@ def cmd_battery(args: argparse.Namespace) -> int:
             laptop.set_charge_thresholds(int(args.values[0]), int(args.values[1]), args.battery)
     except PermissionError:
         return _perm_hint()
-    except (IndexError, ValueError, RuntimeError) as exc:
+    except (IndexError, ValueError, RuntimeError, OSError) as exc:
         return _err(str(exc))
     for b in laptop.batteries():
-        print(f"{b.name}: {b.capacity}% {b.status}")
+        via = {"smbios": " (via dell-smbios)", "sysfs": ""}.get(b.backend, "")
+        print(f"{b.name}: {b.capacity}% {b.status}{via}")
         if b.charge_types:
             print("  modos  : " + " ".join(f"[{t}]" if t == b.charge_type else t for t in b.charge_types))
         if b.end_threshold is not None:
             print(f"  limites: início {b.start_threshold}%  fim {b.end_threshold}%")
+        if b.note:
+            print(f"  nota   : {b.note}")
+        if b.backend == "none":
+            print("  nota   : sem controle de carga (dell-laptop não carregado e dell-smbios ausente)")
     return 0
 
 
@@ -148,6 +154,8 @@ def cmd_devices(args: argparse.Namespace) -> int:
     for p in devices.peripherals() if not args.all else []:
         status = p.info.status if p.info else "desconhecido - contribua! (docs/REVERSE_ENGINEERING.md)"
         print(f"\n{p.title}  [{p.vid:04x}:{p.pid:04x}]\n  status: {status}")
+        if p.supports_battery:
+            print(f"  bateria: {p.battery()}")
         for d in p.interfaces:
             _print_interface(d)
     if args.all:
@@ -232,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("battery", help="modo de carga e limites da bateria")
     sp.add_argument("action", nargs="?", choices=["show", "mode", "limit"], default="show")
-    sp.add_argument("values", nargs="*", help="mode: <Standard|Adaptive|Express|Custom|Long_Life...>  limit: <início> <fim>")
+    sp.add_argument("values", nargs="*", help="mode: <Standard|Adaptive|Fast|Custom|Long_Life>  limit: <início> <fim>")
     sp.add_argument("--battery", help="ex: BAT0")
     sp.set_defaults(func=cmd_battery)
 
