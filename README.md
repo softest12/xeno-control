@@ -30,7 +30,7 @@ Testado como alvo: **Alienware 16 Aurora (AC16250)**, **Alienware Pro Wireless G
 Requisitos: Linux com kernel **6.15 ou mais novo** recomendado, Python 3.9+.
 
 ```bash
-git clone https://github.com/<seu-usuario>/xeno-control.git
+git clone https://github.com/softest12/xeno-control.git
 cd xeno-control
 ./install.sh
 ```
