@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Xeno Control
+Comment=Energia, ventoinhas e periféricos Alienware
+Exec=xeno-control
+Icon=preferences-system-power
+Categories=Settings;HardwareSettings;System;
+Terminal=false

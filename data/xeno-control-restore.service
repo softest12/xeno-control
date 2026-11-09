@@ -1,0 +1,10 @@
+[Unit]
+Description=Xeno Control - restore last power profile
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env xeno profile restore
+
+[Install]
+WantedBy=multi-user.target

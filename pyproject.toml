@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xeno-control"
+dynamic = ["version"]
+description = "Open-source control center for Alienware laptops and peripherals on Linux"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: Qt",
+    "Topic :: System :: Hardware",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.5"]
+dev = ["pytest"]
+
+[project.scripts]
+xeno = "xeno_control.cli:main"
+
+[project.gui-scripts]
+xeno-control = "xeno_control.gui:main"
+
+[tool.setuptools]
+packages = ["xeno_control"]
+
+[tool.setuptools.dynamic]
+version = { attr = "xeno_control.__version__" }

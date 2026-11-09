@@ -1,0 +1,10 @@
+# Xeno Control: allow the logged-in user to talk to Alienware/Dell HID
+# peripherals (mouse, headset) through hidraw without sudo.
+# Install: sudo cp 70-xeno-control.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+
+# Alienware Pro Wireless Gaming Headset dongle
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="413c", ATTRS{idProduct}=="a529", TAG+="uaccess"
+# Alienware wireless mouse receiver
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="413c", ATTRS{idProduct}=="2120", TAG+="uaccess"
+# Legacy Alienware USB devices (AlienFX keyboards/lighting)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", TAG+="uaccess"
